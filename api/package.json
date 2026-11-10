@@ -1,0 +1,39 @@
+{
+  "name": "orders-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Tenant-scoped order API with a transactional outbox relay to SQS",
+  "license": "MIT",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "start": "node --require ./dist/tracing.js dist/server.js",
+    "test": "vitest run test/unit",
+    "test:integration": "vitest run test/integration",
+    "test:e2e": "vitest run test/e2e",
+    "demo": "tsx scripts/demo.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-sqs": "^3.1165.0",
+    "@opentelemetry/api": "^1.10.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.301.1",
+    "@opentelemetry/instrumentation-http": "^0.301.1",
+    "@opentelemetry/instrumentation-pg": "^0.78.0",
+    "@opentelemetry/sdk-node": "^0.301.1",
+    "fastify": "^5.12.8",
+    "jose": "^6.2.17",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@opentelemetry/core": "^3.1.1",
+    "@types/node": "^22.20.5",
+    "@types/pg": "^8.23.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}
