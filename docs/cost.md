@@ -47,7 +47,7 @@ Excludes tax, support plans, data transfer out, and free-tier credits.
 | NAT gateway instead of public IPs | **Adds** ~$33/AZ + $0.045/GB | Standard private-subnet pattern; worth it for compliance, not for cost |
 
 **Cheapest sensible configuration** (RDS t4g.micro, 1 API task, Spot
-worker, Container Insights off): roughly **$60/month**, dominated by the ALB
+worker, Container Insights off): roughly **$65/month**, dominated by the ALB
 and IPv4 addresses. Below that, the next step is replacing the ALB with API
 Gateway HTTP API + VPC Link, or moving the API to Lambda, which changes the
 architecture rather than its settings.

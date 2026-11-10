@@ -72,7 +72,7 @@ async function main(): Promise<void> {
   const forged = randomUUID();
   await inject(envelope(forged, globex.id, first.body.id), { tenant_id: globex.id, event_id: forged });
   log('   RLS hides acme\'s order from a globex transaction, so this can never succeed.');
-  log('   The worker retries with exponential backoff (1s, 2s, 4s + jitter), then dead-letters it.');
+  log('   The worker retries with exponential backoff (up to 1s, 2s, 4s, jittered), then dead-letters it.');
   const t0 = Date.now();
   const dead = await waitFor('DLQ', () => findInDLQ(forged), 60_000);
   show('dead-lettered after', `${((Date.now() - t0) / 1000).toFixed(1)} s`);
@@ -85,7 +85,7 @@ async function main(): Promise<void> {
   const junk = randomUUID();
   await inject('{"not": json', { tenant_id: acme.id, event_id: junk });
   const junkDead = await waitFor('DLQ', () => findInDLQ(junk), 20_000);
-  show('failure_reason', junkDead.attrs.failure_reason.slice(0, 60));
+  show('failure_reason', (junkDead.attrs.failure_reason ?? '').slice(0, 60));
   show('failed_attempts', junkDead.attrs.failed_attempts);
 
   step('Queue depths (the DLQ also holds anything from earlier runs)');
