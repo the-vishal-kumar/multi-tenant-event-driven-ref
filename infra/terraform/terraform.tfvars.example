@@ -1,0 +1,7 @@
+# Copy to terraform.tfvars. Nothing in this repo has been applied.
+certificate_arn = "arn:aws:acm:us-east-1:111122223333:certificate/00000000-0000-0000-0000-000000000000"
+api_image       = "111122223333.dkr.ecr.us-east-1.amazonaws.com/orders-api:1.0.0"
+worker_image    = "111122223333.dkr.ecr.us-east-1.amazonaws.com/orders-worker:1.0.0"
+# database_mode  = "rds-instance"
+# aurora_min_acu = 0
+# alarm_email    = "oncall@example.com"

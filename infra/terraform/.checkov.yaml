@@ -1,0 +1,39 @@
+# Checkov runs in CI with this file. Each skip is a deliberate cost or scope
+# trade-off for a reference deployment, listed in README "What production
+# would add". Everything else must pass.
+framework:
+  - terraform
+compact: true
+quiet: true
+skip-download: true
+skip-check:
+  # Customer-managed KMS keys for secrets, log groups and Performance
+  # Insights. AWS-managed keys already encrypt at rest; a CMK adds key-policy
+  # ownership and ~$1/key/month. Production: one CMK per data class.
+  - CKV_AWS_149
+  - CKV_AWS_158
+  - CKV_AWS_354
+  # Secret rotation needs a rotation Lambda per role. Production: rotate the
+  # database role passwords with the RDS rotation templates.
+  - CKV2_AWS_57
+  # Public IPs on tasks: the default-VPC layout (no NAT). Controlled by
+  # var.assign_public_ip; security groups allow no inbound to the worker and
+  # only ALB -> API on 3000.
+  - CKV_AWS_333
+  # Port 80 is open only to answer with a 301 to HTTPS.
+  - CKV_AWS_260
+  # ALB access logs (needs an S3 bucket and bucket policy) and WAF (~$5/month
+  # plus per-rule and per-request charges). Production: both.
+  - CKV_AWS_91
+  - CKV2_AWS_28
+  # Database: Multi-AZ is var.db_multi_az; automated backups are kept 7 days
+  # (AWS Backup adds cross-account copies); enhanced monitoring and query
+  # logging are cost and noise trade-offs (Performance Insights is on).
+  - CKV_AWS_157
+  - CKV2_AWS_8
+  - CKV_AWS_118
+  - CKV2_AWS_27
+  - CKV2_AWS_30
+  # Log retention is var.log_retention_days (30); a year of logs is a
+  # compliance choice, not a default.
+  - CKV_AWS_338
