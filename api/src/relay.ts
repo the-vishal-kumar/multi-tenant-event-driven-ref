@@ -46,7 +46,7 @@ export class Relay {
                 traceparent, tracestate, created_at
            FROM outbox
           WHERE published_at IS NULL AND event_type = ANY($2::text[])
-          ORDER BY id
+          ORDER BY publish_attempts, id  -- rows that keep failing don't block newer ones
           LIMIT $1
           FOR UPDATE SKIP LOCKED`,
         [this.batchSize, this.eventTypes],
@@ -72,7 +72,7 @@ export class Relay {
         ),
       );
       const messages: OutboundMessage[] = rows.map((r, i) => toMessage(r, trace.setSpan(context.active(), spans[i]!)));
-      const { failed } = await this.queue.sendBatch(messages);
+      const { failed, error } = await this.queue.sendBatch(messages);
       const failedSet = new Set(failed);
 
       const ok = rows.filter((r) => !failedSet.has(r.id)).map((r) => r.id);
@@ -91,6 +91,11 @@ export class Relay {
         if (failedSet.has(rows[i]!.id)) s.setStatus({ code: 2, message: 'send failed' });
         s.end();
       });
+      if (bad.length) {
+        // The attempts are committed; now make the failure visible (run()
+        // passes it to onError, which logs it).
+        throw new PublishError(bad.length, rows.length, error ?? 'rejected by the queue');
+      }
       return ok.length;
     } catch (err) {
       await client.query('ROLLBACK').catch(() => {
@@ -113,6 +118,14 @@ export class Relay {
       }
       if (published < this.batchSize) await sleep(intervalMs, signal);
     }
+  }
+}
+
+/** Some outbox rows couldn't be sent; they stay unpublished and are retried. */
+export class PublishError extends Error {
+  constructor(readonly failed: number, readonly total: number, reason: string) {
+    super(`${failed} of ${total} outbox rows not published: ${reason}`);
+    this.name = 'PublishError';
   }
 }
 

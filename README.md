@@ -120,13 +120,15 @@ Each has an ADR with the alternatives and when I would revisit it.
 | API dies between order insert and publish | Outbox row is committed with the order; relay publishes it later | outbox design; relay test |
 | Relay dies after send, before marking | Event sent again; worker dedupes | `TestDuplicateDeliveryAppliesOnce`, e2e duplicate delivery |
 | SQS delivers twice / concurrently | `processed_messages` PK: applied once, `duplicate_deliveries` counted | `TestConcurrentDeliveriesApplyExactlyOnce` (16 goroutines) |
-| SQS send fails | Rows stay unpublished, `publish_attempts` incremented, retried next pass | `relay.test.ts` |
+| SQS send fails (outage, IAM, wrong URL) | Rows stay unpublished, `publish_attempts` incremented, retried next pass; the error is logged on every pass; rows that keep failing are ordered last so they don't block newer ones | `relay.test.ts` |
+| Relay can't publish for a long time | **Gap:** logged but not alarmed. The SQS alarms can't see rows still in the outbox; production should emit the age of the oldest unpublished outbox row as a metric and alarm on it | — |
 | Transient DB error in the worker | Backoff via visibility timeout (base × 2^n, jittered), then success | `TestTransientFailureRetriesWithBackoffThenSucceeds` |
 | Message names another tenant's order | RLS hides the order → retries → DLQ with `order not found in tenant`; the other tenant's order is untouched | `TestCrossTenantMessageIsRejectedAndLeavesNoTrace`, e2e, demo |
 | Malformed message | DLQ on the first attempt with the parse error | `TestPermanentErrorsSkipRetries`, e2e |
 | DLQ send fails | Message left on the main queue for SQS to redeliver | `TestDLQSendFailureLeavesMessageOnQueue` |
 | Worker crash-loops on one message | SQS redrive policy (`maxReceiveCount` 8 > `MAX_ATTEMPTS` 5) moves it | Terraform precondition; LocalStack config |
 | Redrive while the cause is unfixed | Message is dead-lettered again; redrive does not pick it up twice | `TestRedriveSkipsMessagesDeadLetteredAfterItStarted` |
+| Redrive on a large DLQ | **Limitation:** redrive stops at the first batch that holds only messages dead-lettered after it started, so with sampling (short polls) it can stop early: run it again until it reports 0. It compares SQS's `SentTimestamp` with the worker's clock, so keep clocks in sync (NTP). For big DLQs, SQS's own `StartMessageMoveTask` is the better tool | — |
 | Workers down or behind | `ApproximateAgeOfOldestMessage` alarm on the main queue | `infra/terraform/alarms.tf` |
 | Dead letters ignored | DLQ depth > 0 and DLQ age alarms | `infra/terraform/alarms.tf` |
 
@@ -146,11 +148,12 @@ method and caveats: [`loadtest/results/`](loadtest/results/README.md).
 | 450 | 450 | 9.0 / 151 / 454 ms | 0% | 10.3 / 14.9 s (backlog) |
 | 600 | 543 (saturated) | 2.1 / 2.2 / 2.5 s | 0% | 7.1 / 15.4 s; 5,195 still queued |
 
-Up to 300 req/s everything keeps up and orders are confirmed in well under
-half a second (most of it the relay's 200 ms idle poll). At 450 req/s the
+Up to 300 req/s everything keeps up: orders are confirmed in 338 ms at p95
+(p99 475 ms), much of it the relay's 200 ms idle poll. At 450 req/s the
 API still answers quickly but the event path falls behind and drains after
-the burst: the outbox absorbs the spike instead of failing requests, and in
-AWS the queue-age alarm is what would fire. The single Node.js process
+the burst: the outbox absorbs the spike instead of failing requests. Part of
+that backlog waits in the outbox, where the SQS queue-age alarm can't see it,
+which is why an outbox-age alarm is listed as a gap below. The single Node.js process
 saturates around 540 req/s. In mid-run `docker stats` samples the API,
 Postgres and LocalStack were each near one core and the Go worker near 30%,
 so the next step would be more API replicas (the relay is safe in each) and

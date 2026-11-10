@@ -13,8 +13,11 @@ export interface OutboundMessage {
 
 /** The only thing the relay needs from a queue. SQS is one implementation. */
 export interface Queue {
-  /** Publishes the batch; returns the ids that failed and should be retried. */
-  sendBatch(messages: OutboundMessage[]): Promise<{ failed: string[] }>;
+  /**
+   * Publishes the batch; returns the ids that failed and should be retried,
+   * and the reason when a whole call failed (network, IAM, throttling).
+   */
+  sendBatch(messages: OutboundMessage[]): Promise<{ failed: string[]; error?: string }>;
 }
 
 export function sqsQueue(queueUrl: string, endpoint?: string): Queue {
@@ -22,6 +25,7 @@ export function sqsQueue(queueUrl: string, endpoint?: string): Queue {
   return {
     async sendBatch(messages) {
       const failed: string[] = [];
+      let error: string | undefined;
       // SendMessageBatch takes at most 10 entries.
       for (let i = 0; i < messages.length; i += 10) {
         const chunk = messages.slice(i, i + 10);
@@ -37,12 +41,14 @@ export function sqsQueue(queueUrl: string, endpoint?: string): Queue {
             }),
           );
           for (const f of out.Failed ?? []) if (f.Id) failed.push(f.Id);
-        } catch {
-          // Whole chunk failed (network, throttling): retried on the next pass.
+        } catch (err) {
+          // Whole chunk failed (network, IAM, throttling): retried on the next
+          // pass, and reported so it shows up in the logs.
           failed.push(...chunk.map((m) => m.id));
+          error ??= err instanceof Error ? `${err.name}: ${err.message}` : String(err);
         }
       }
-      return { failed };
+      return { failed, error };
     },
   };
 }

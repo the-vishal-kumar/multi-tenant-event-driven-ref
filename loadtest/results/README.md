@@ -43,13 +43,15 @@ poll (200 ms when idle) + SQS + worker. It was read 10 s after k6 finished.
 ## Reading it
 
 - Up to **300 req/s** (~210 new orders/s) the whole pipeline keeps up: HTTP
-  p95 under 15 ms and every order confirmed within half a second, most of
-  it the relay's 200 ms idle poll.
+  p95 under 15 ms, and orders confirmed in 233 ms at p50 and 338 ms at p95
+  (p99 475 ms, slowest 1.3 s), much of it the relay's 200 ms idle poll.
 - At **450 req/s** the HTTP side still answers (p95 151 ms) but the
   asynchronous side falls behind: orders queue up and lag grows to ~15 s,
   then drains after the burst. The API stays fast because the outbox
-  decouples it from the queue, which is the point of the design, and a
-  queue-age alarm is what would catch this in production.
+  decouples it from the queue, which is the point of the design. Part of
+  that backlog waits in the outbox table, where the SQS queue-age alarm
+  can't see it; production needs an outbox-age alarm too (see the failure
+  modes table in the main README).
 - At **600 req/s** the API saturates at ~540 req/s and k6 drops iterations.
 - In the `docker stats` samples at 450 and 600 req/s, the API (one Node.js
   process), Postgres and LocalStack were each at roughly one full core, and

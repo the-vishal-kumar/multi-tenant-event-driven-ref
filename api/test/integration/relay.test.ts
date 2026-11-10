@@ -70,15 +70,33 @@ describe('outbox relay', () => {
     const tenant = await newTenant('relay-fail');
     const type = `test.relay-fail.${randomUUID().slice(0, 8)}`;
     await writeEvents(tenant, type, 2);
-    const failing: Queue = { sendBatch: async (msgs) => ({ failed: msgs.map((m) => m.id) }) };
+    const failing: Queue = { sendBatch: async (msgs) => ({ failed: msgs.map((m) => m.id), error: 'AccessDenied: not allowed' }) };
     const relayPool = pool('DATABASE_URL_RELAY');
-    expect(await new Relay(relayPool, failing, 50, [type]).runOnce()).toBe(0);
+    // The failure is reported (run() logs it), not swallowed.
+    await expect(new Relay(relayPool, failing, 50, [type]).runOnce()).rejects.toThrow(
+      '2 of 2 outbox rows not published: AccessDenied: not allowed');
     const rows = await relayPool.query(
       `SELECT published_at, publish_attempts FROM outbox WHERE event_type = $1`, [type]);
     expect(rows.rows).toEqual([
       { published_at: null, publish_attempts: 1 },
       { published_at: null, publish_attempts: 1 },
     ]);
+  });
+
+  it('lets new rows past rows that keep failing', async () => {
+    const tenant = await newTenant('relay-hol');
+    const type = `test.relay-hol.${randomUUID().slice(0, 8)}`;
+    await writeEvents(tenant, type, 2);
+    const relayPool = pool('DATABASE_URL_RELAY');
+    // The older row has failed many times already.
+    await relayPool.query(
+      `UPDATE outbox SET publish_attempts = 7 WHERE id = (SELECT min(id) FROM outbox WHERE event_type = $1)`, [type]);
+    const sent: string[] = [];
+    const recording: Queue = { sendBatch: async (msgs) => { sent.push(...msgs.map((m) => m.id)); return { failed: [] }; } };
+    expect(await new Relay(relayPool, recording, 1, [type]).runOnce()).toBe(1);
+    const fresh = await relayPool.query(
+      `SELECT id::text FROM outbox WHERE event_type = $1 AND publish_attempts = 0`, [type]);
+    expect(sent).toEqual([fresh.rows[0].id]);
   });
 });
 
