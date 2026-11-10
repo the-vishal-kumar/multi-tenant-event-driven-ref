@@ -1,0 +1,116 @@
+# Local stack: Postgres, LocalStack SQS, Jaeger, the API (with the outbox
+# relay) and the Go worker. Every secret below is a throwaway dev value.
+# AWS_* credentials are LocalStack's dummy "test" values; nothing here talks
+# to a real AWS account.
+name: mtedr
+
+x-aws-local: &aws-local
+  AWS_ACCESS_KEY_ID: test
+  AWS_SECRET_ACCESS_KEY: test
+  AWS_REGION: us-east-1
+  SQS_ENDPOINT: http://localstack:4566
+  QUEUE_URL: http://localstack:4566/000000000000/orders-events
+  DLQ_URL: http://localstack:4566/000000000000/orders-events-dlq
+
+x-db-urls: &db-urls
+  DATABASE_URL_OWNER: postgres://orders_owner:owner-dev-only@db:5432/orders
+  DATABASE_URL_API: postgres://app_api:api-dev-only@db:5432/orders
+  DATABASE_URL_RELAY: postgres://app_relay:relay-dev-only@db:5432/orders
+  DATABASE_URL_WORKER: postgres://app_worker:worker-dev-only@db:5432/orders
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres-dev-only
+    volumes:
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "orders"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  localstack:
+    image: localstack/localstack:4.4.0
+    environment:
+      SERVICES: sqs
+      SQS_ENDPOINT_STRATEGY: path
+    volumes:
+      - ./deploy/localstack/init-queues.sh:/etc/localstack/init/ready.d/init-queues.sh:ro
+    healthcheck:
+      test: ["CMD", "awslocal", "sqs", "get-queue-url", "--queue-name", "orders-events"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "127.0.0.1:16686:16686"
+
+  migrate:
+    build: { context: ., dockerfile: api/Dockerfile, target: runtime }
+    image: mtedr-api:local
+    command: ["node", "dist/cli.js", "migrate"]
+    environment: *db-urls
+    depends_on:
+      db: { condition: service_healthy }
+    restart: "no"
+
+  api:
+    image: mtedr-api:local
+    environment:
+      <<: [*db-urls, *aws-local]
+      PORT: "3000"
+      JWT_SECRET: dev-only-signing-secret-do-not-use-anywhere-else
+      OTEL_SERVICE_NAME: orders-api
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      localstack: { condition: service_healthy }
+      jaeger: { condition: service_started }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/healthz"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  worker:
+    build: { context: ./worker }
+    image: mtedr-worker:local
+    environment:
+      <<: *aws-local
+      DATABASE_URL_WORKER: postgres://app_worker:worker-dev-only@db:5432/orders
+      MAX_ATTEMPTS: "4"
+      BACKOFF_BASE: 1s
+      BACKOFF_MAX: 30s
+      CONCURRENCY: "4"
+      OTEL_SERVICE_NAME: orders-worker
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      localstack: { condition: service_healthy }
+      jaeger: { condition: service_started }
+
+  # Test/demo runner: the API's build stage (source + dev dependencies).
+  # `docker compose --profile tools run --rm tools npm run demo`
+  tools:
+    profiles: ["tools"]
+    build: { context: ., dockerfile: api/Dockerfile, target: test }
+    image: mtedr-api-tools:local
+    environment:
+      <<: [*db-urls, *aws-local]
+      JWT_SECRET: dev-only-signing-secret-do-not-use-anywhere-else
+      API_URL: http://api:3000
+      JAEGER_URL: http://jaeger:16686
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+volumes:
+  pgdata:
