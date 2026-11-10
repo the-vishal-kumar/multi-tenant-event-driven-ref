@@ -287,3 +287,21 @@ func TestContinuesTraceFromMessageAttributes(t *testing.T) {
 			s.SpanContext().TraceID(), s.Parent().SpanID())
 	}
 }
+
+func TestRedriveSkipsMessagesDeadLetteredAfterItStarted(t *testing.T) {
+	dlq, main := &fakeQueue{}, &fakeQueue{}
+	dlq.pending = []queue.Message{
+		{ID: "old", ReceiptHandle: "rh-old", Body: "b", SentAt: time.Now().Add(-time.Hour)},
+		{ID: "new", ReceiptHandle: "rh-new", Body: "b", SentAt: time.Now().Add(time.Hour)},
+	}
+	n, err := Redrive(context.Background(), dlq, main, 100)
+	if err != nil || n != 1 {
+		t.Fatalf("Redrive = %d, %v; want 1, nil", n, err)
+	}
+	if len(dlq.deleted) != 1 || dlq.deleted[0] != "rh-old" {
+		t.Fatalf("deleted = %v, want only rh-old", dlq.deleted)
+	}
+	if d, ok := dlq.visibility["rh-new"]; !ok || d != 0 {
+		t.Fatalf("newer message should be made visible again, visibility = %v", dlq.visibility)
+	}
+}

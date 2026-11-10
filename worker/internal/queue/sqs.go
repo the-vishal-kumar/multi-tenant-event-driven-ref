@@ -21,11 +21,14 @@ func NewSQS(client *sqs.Client, url string) *SQS { return &SQS{client: client, u
 
 func (q *SQS) Receive(ctx context.Context, limit int, wait time.Duration) ([]Message, error) {
 	out, err := q.client.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
-		QueueUrl:                    aws.String(q.url),
-		MaxNumberOfMessages:         int32(min(limit, 10)),
-		WaitTimeSeconds:             int32(wait / time.Second),
-		MessageAttributeNames:       []string{"All"},
-		MessageSystemAttributeNames: []types.MessageSystemAttributeName{types.MessageSystemAttributeNameApproximateReceiveCount},
+		QueueUrl:              aws.String(q.url),
+		MaxNumberOfMessages:   int32(min(limit, 10)),
+		WaitTimeSeconds:       int32(wait / time.Second),
+		MessageAttributeNames: []string{"All"},
+		MessageSystemAttributeNames: []types.MessageSystemAttributeName{
+			types.MessageSystemAttributeNameApproximateReceiveCount,
+			types.MessageSystemAttributeNameSentTimestamp,
+		},
 	})
 	if err != nil {
 		return nil, err
@@ -39,12 +42,14 @@ func (q *SQS) Receive(ctx context.Context, limit int, wait time.Duration) ([]Mes
 			}
 		}
 		count, _ := strconv.Atoi(m.Attributes[string(types.MessageSystemAttributeNameApproximateReceiveCount)])
+		sentMs, _ := strconv.ParseInt(m.Attributes[string(types.MessageSystemAttributeNameSentTimestamp)], 10, 64)
 		msgs = append(msgs, Message{
 			ID:            aws.ToString(m.MessageId),
 			ReceiptHandle: aws.ToString(m.ReceiptHandle),
 			Body:          aws.ToString(m.Body),
 			Attributes:    attrs,
 			ReceiveCount:  max(count, 1),
+			SentAt:        time.UnixMilli(sentMs),
 		})
 	}
 	return msgs, nil

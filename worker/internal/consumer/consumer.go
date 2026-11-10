@@ -104,7 +104,7 @@ func (c *Consumer) Handle(ctx context.Context, m queue.Message) Outcome {
 		return c.deadLetter(ctx, m, err, log)
 	}
 	delay := c.Backoff(m.ReceiveCount)
-	log.Warn("processing failed, will retry", "err", err, "delay", delay)
+	log.Warn("processing failed, will retry", "err", err, "delay", delay.String())
 	if verr := c.Queue.ChangeVisibility(ctx, m.ReceiptHandle, delay); verr != nil {
 		log.Error("change visibility failed", "err", verr)
 	}
@@ -181,20 +181,27 @@ func (c *Consumer) Run(ctx context.Context, workers int) {
 	wg.Wait()
 }
 
-// Redrive moves up to max messages from the DLQ back to the main queue,
+// Redrive moves up to limit messages from the DLQ back to the main queue,
 // dropping the failure attributes. Each moved message starts with a fresh
-// receive count. Returns how many were moved.
+// receive count. Only messages that were already in the DLQ when Redrive
+// started are moved: a message that is still poison gets dead-lettered again
+// while the redrive runs, and must not be picked up a second time (that loop
+// would spin until the limit). Returns how many were moved.
 func Redrive(ctx context.Context, dlq, main queue.Queue, limit int) (int, error) {
+	started := time.Now()
 	moved := 0
 	for moved < limit {
 		msgs, err := dlq.Receive(ctx, min(10, limit-moved), time.Second)
 		if err != nil {
 			return moved, err
 		}
-		if len(msgs) == 0 {
-			return moved, nil
-		}
+		movedNow := 0
 		for _, m := range msgs {
+			if m.SentAt.After(started) {
+				// Arrived after we started: leave it, visible again at once.
+				_ = dlq.ChangeVisibility(ctx, m.ReceiptHandle, 0)
+				continue
+			}
 			attrs := make(map[string]string, len(m.Attributes))
 			for k, v := range m.Attributes {
 				switch k {
@@ -210,6 +217,10 @@ func Redrive(ctx context.Context, dlq, main queue.Queue, limit int) (int, error)
 				return moved, err
 			}
 			moved++
+			movedNow++
+		}
+		if movedNow == 0 {
+			return moved, nil
 		}
 	}
 	return moved, nil

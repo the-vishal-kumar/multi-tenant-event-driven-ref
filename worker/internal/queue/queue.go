@@ -15,6 +15,7 @@ type Message struct {
 	Body          string
 	Attributes    map[string]string // string message attributes (tenant_id, traceparent, ...)
 	ReceiveCount  int               // ApproximateReceiveCount: 1 on first delivery
+	SentAt        time.Time         // when the message was sent to this queue
 }
 
 // Queue has SQS semantics: at-least-once delivery, a visibility timeout, and

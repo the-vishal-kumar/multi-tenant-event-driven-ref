@@ -50,6 +50,9 @@ func TestSQSRoundTripWithAttributesAndReceiveCount(t *testing.T) {
 	if m.Body != `{"hello":1}` || m.Attributes["tenant_id"] != "t1" || m.Attributes["traceparent"] != "00-abc" || m.ReceiveCount != 1 {
 		t.Fatalf("got %+v", m)
 	}
+	if d := time.Since(m.SentAt); d < -time.Minute || d > time.Minute {
+		t.Fatalf("SentAt = %s, want about now", m.SentAt)
+	}
 
 	// Make it visible again at once: the next receive is delivery #2.
 	if err := q.ChangeVisibility(ctx, m.ReceiptHandle, 0); err != nil {
