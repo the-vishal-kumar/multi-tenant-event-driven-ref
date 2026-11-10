@@ -1,0 +1,5 @@
+mtedr-worker-1 cpu=31.46% mem=11.62MiB / 10.92GiB
+mtedr-api-1 cpu=115.87% mem=240MiB / 10.92GiB
+mtedr-db-1 cpu=116.54% mem=91.99MiB / 10.92GiB
+mtedr-localstack-1 cpu=107.02% mem=146.7MiB / 10.92GiB
+mtedr-jaeger-1 cpu=10.46% mem=356.5MiB / 10.92GiB
