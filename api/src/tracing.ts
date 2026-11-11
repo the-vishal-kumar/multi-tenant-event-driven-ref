@@ -7,8 +7,10 @@ import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { HttpInstrumentation } from '@opentelemetry/instrumentation-http';
 import { PgInstrumentation } from '@opentelemetry/instrumentation-pg';
 
+let sdk: NodeSDK | undefined;
+
 if (process.env.OTEL_EXPORTER_OTLP_ENDPOINT) {
-  const sdk = new NodeSDK({
+  sdk = new NodeSDK({
     serviceName: process.env.OTEL_SERVICE_NAME ?? 'orders-api',
     traceExporter: new OTLPTraceExporter(),
     instrumentations: [
@@ -19,9 +21,14 @@ if (process.env.OTEL_EXPORTER_OTLP_ENDPOINT) {
     ],
   });
   sdk.start();
-  const stop = () => {
-    sdk.shutdown().catch(() => undefined);
-  };
-  process.once('SIGTERM', stop);
-  process.once('SIGINT', stop);
+}
+
+/**
+ * Flushes buffered spans. server.ts calls this as the last step of its
+ * shutdown, after the HTTP server and the relay have stopped, so the spans of
+ * the final requests and publishes are exported before the process exits.
+ * (`--require` and `import` resolve to the same module instance.)
+ */
+export async function shutdownTracing(): Promise<void> {
+  await sdk?.shutdown().catch(() => undefined);
 }

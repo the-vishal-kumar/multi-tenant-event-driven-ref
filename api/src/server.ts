@@ -5,6 +5,10 @@ import { createPool } from './db';
 import { pgOrdersRepo } from './orders';
 import { sqsQueue } from './queue';
 import { Relay } from './relay';
+import { shutdownTracing } from './tracing';
+
+// ECS sends SIGKILL 30 s after SIGTERM by default; finish well before that.
+const SHUTDOWN_TIMEOUT_MS = 20_000;
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
@@ -20,13 +24,29 @@ async function main(): Promise<void> {
     relayDone = relay.run(stop.signal, cfg.relayIntervalMs, (err) => app.log.error({ err }, 'relay batch failed'));
   }
 
+  let stopping = false;
   const shutdown = async (signal: string) => {
+    if (stopping) return;
+    stopping = true;
     app.log.info({ signal }, 'shutting down');
-    stop.abort();
-    await app.close();
-    await relayDone;
-    await Promise.all([apiPool.end(), relayPool?.end()]);
-    process.exit(0);
+    // If something hangs (a stuck SQS call, a slow client), exit non-zero
+    // rather than wait for SIGKILL.
+    setTimeout(() => {
+      app.log.error({ timeoutMs: SHUTDOWN_TIMEOUT_MS }, 'shutdown timed out');
+      process.exit(1);
+    }, SHUTDOWN_TIMEOUT_MS).unref();
+    try {
+      stop.abort(); // the relay finishes its current batch, then returns
+      await app.close(); // stop accepting connections, finish in-flight requests
+      await relayDone;
+      await Promise.all([apiPool.end(), relayPool?.end()]);
+      await shutdownTracing();
+      app.log.info('shutdown complete');
+      process.exit(0);
+    } catch (err) {
+      app.log.error({ err }, 'shutdown failed');
+      process.exit(1);
+    }
   };
   process.once('SIGTERM', () => void shutdown('SIGTERM'));
   process.once('SIGINT', () => void shutdown('SIGINT'));
