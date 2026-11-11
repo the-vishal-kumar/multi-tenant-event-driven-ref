@@ -100,6 +100,44 @@ describe('outbox relay', () => {
   });
 });
 
+describe('outbox relay under concurrency', () => {
+  it('publishes each row exactly once when several relays drain the same backlog', async () => {
+    const tenant = await newTenant('relay-race');
+    const type = `test.relay-race.${randomUUID().slice(0, 8)}`;
+    await writeEvents(tenant, type, 40);
+    const sent: string[] = [];
+    // A slow queue keeps each batch's rows locked long enough for the others to collide.
+    const slow: Queue = {
+      sendBatch: async (msgs) => {
+        await new Promise((r) => setTimeout(r, 30));
+        sent.push(...msgs.map((m) => m.id));
+        return { failed: [] };
+      },
+    };
+    const relays = Array.from({ length: 4 }, () => new Relay(pool('DATABASE_URL_RELAY'), slow, 5, [type]));
+    await Promise.all(relays.map(async (r) => {
+      while ((await r.runOnce()) > 0);
+    }));
+    expect(sent).toHaveLength(40);
+    expect(new Set(sent).size).toBe(40);
+    const left = await pool('DATABASE_URL_RELAY').query(
+      `SELECT count(*)::int AS n FROM outbox WHERE event_type = $1 AND published_at IS NULL`, [type]);
+    expect(left.rows[0].n).toBe(0);
+  });
+
+  it('sends rows in outbox id order within one relay', async () => {
+    const tenant = await newTenant('relay-order');
+    const type = `test.relay-order.${randomUUID().slice(0, 8)}`;
+    await writeEvents(tenant, type, 12);
+    const sent: string[] = [];
+    const recording: Queue = { sendBatch: async (msgs) => { sent.push(...msgs.map((m) => m.id)); return { failed: [] }; } };
+    const relay = new Relay(pool('DATABASE_URL_RELAY'), recording, 5, [type]);
+    while ((await relay.runOnce()) > 0);
+    expect(sent).toHaveLength(12);
+    expect(sent.map(Number)).toEqual([...sent.map(Number)].sort((a, b) => a - b));
+  });
+});
+
 async function receiveUntil(match: (attrs: Record<string, string>) => boolean) {
   for (let i = 0; i < 20; i++) {
     const out = await sqs.send(new ReceiveMessageCommand({
