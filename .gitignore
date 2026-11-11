@@ -6,3 +6,6 @@ dist/
 .terraform.lock.hcl.bak
 crash.log
 *.tfplan
+
+# macOS
+.DS_Store
