@@ -17,7 +17,10 @@ FROM node:22-alpine AS runtime
 ENV NODE_ENV=production MIGRATIONS_DIR=/app/db/migrations
 WORKDIR /app/api
 COPY api/package.json api/package-lock.json ./
-RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
+# npm is only needed to install; drop it (and its bundled dependencies) from the image.
+RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force \
+ && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+      /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /opt/yarn-* /usr/local/bin/yarn /usr/local/bin/yarnpkg
 COPY --from=build /app/api/dist ./dist
 COPY db/migrations /app/db/migrations
 USER node

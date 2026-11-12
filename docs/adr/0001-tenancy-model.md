@@ -41,19 +41,32 @@ Shared tables with a `tenant_id` column and row-level security:
   which is cross-tenant by design, can read the outbox and nothing else.
 - The tenant comes from a verified JWT claim, never from a path, header or
   body.
+- **Only the migrate job holds the owner's credentials.** The owner owns the
+  tables, so it can `ALTER TABLE ... NO FORCE ROW LEVEL SECURITY` and read
+  everything. The API and worker containers get only their own role's
+  connection string, locally and in the ECS task definitions.
 
 The integration tests (`api/test/integration/rls.test.ts`,
 `worker/internal/store/store_test.go`) check these properties against a real
 Postgres: unfiltered queries, no tenant set, forged `tenant_id` on insert,
-setting cleared after commit and rollback on the same connection, and each
-role's missing privileges.
+setting cleared after commit and rollback on the same connection and on a
+one-connection pool, and each role's missing privileges. Catalog tests fail
+the build if any application role is a superuser or has `BYPASSRLS`, if a
+service role owns an object, is a member of the owner or can create objects,
+or if any table with a `tenant_id` column lacks forced RLS.
 
 ## Consequences
 
 - Cheap tenants and one migration path. Fits a long tail of small tenants.
 - Isolation depends on Postgres policies being right. They are short and
   tested; adding a tenant table means adding its policy in the same
-  migration (review checklist item).
+  migration, and the catalog test fails if the table lacks forced RLS.
+- `app.tenant_id` is an ordinary setting, not a credential: any session of a
+  service role can set it to any tenant. The boundary is "the service only
+  runs its own parameterised queries". SQL injection in a service would
+  cross it. Stronger options, at more cost: a role per tenant (`SET ROLE`,
+  thousands of roles), or a signed tenant token checked by a
+  `SECURITY DEFINER` function in every policy.
 - Noisy neighbours share capacity. Mitigate with per-tenant rate limits at
   the API and, if one tenant dominates, by moving it out.
 - Per-tenant restore, deletion and data residency need row-level tooling.

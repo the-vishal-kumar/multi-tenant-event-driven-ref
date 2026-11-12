@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -30,6 +31,18 @@ import (
 	"github.com/the-vishal-kumar/multi-tenant-event-driven-ref/worker/internal/store"
 )
 
+const usage = `Usage: worker [command]
+
+Commands:
+  run                consume order events until SIGTERM (default)
+  redrive [-max N]   move up to N messages (default 100) from the DLQ back to the queue
+  help               show this help
+
+Configuration comes from the environment: QUEUE_URL, DLQ_URL,
+DATABASE_URL_WORKER (run only), and optionally SQS_ENDPOINT, CONCURRENCY,
+MAX_ATTEMPTS, BACKOFF_BASE, BACKOFF_MAX, OTEL_EXPORTER_OTLP_ENDPOINT.
+`
+
 func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -46,8 +59,15 @@ func main() {
 		err = run(ctx, log)
 	case "redrive":
 		err = redrive(ctx, log, args)
+	case "help", "-h", "-help", "--help":
+		fmt.Print(usage)
+		return
 	default:
-		err = fmt.Errorf("unknown command %q (want run or redrive)", cmd)
+		fmt.Fprint(os.Stderr, usage)
+		err = fmt.Errorf("unknown command %q", cmd)
+	}
+	if errors.Is(err, flag.ErrHelp) {
+		return // the flag package already printed the usage
 	}
 	if err != nil {
 		log.Error("exit", "err", err)

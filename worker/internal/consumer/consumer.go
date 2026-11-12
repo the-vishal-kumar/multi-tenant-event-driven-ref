@@ -84,6 +84,10 @@ func (c *Consumer) Handle(ctx context.Context, m queue.Message) Outcome {
 		))
 	defer span.End()
 	log := c.Log.With("message_id", m.ID, "attempt", m.ReceiveCount, "tenant_id", m.Attributes["tenant_id"])
+	if sc := span.SpanContext(); sc.IsValid() {
+		// Same trace as the HTTP request that created the order.
+		log = log.With("trace_id", sc.TraceID().String(), "span_id", sc.SpanID().String())
+	}
 
 	dup, err := c.apply(ctx, m, log)
 	if err == nil {

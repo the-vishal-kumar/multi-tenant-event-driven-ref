@@ -64,8 +64,13 @@ services:
 
   api:
     image: mtedr-api:local
+    # Only the API and relay roles. The owner role owns the tables and could
+    # turn RLS off, so it stays with the migrate job and operator tools, as in
+    # the ECS task definitions.
     environment:
-      <<: [*db-urls, *aws-local]
+      <<: *aws-local
+      DATABASE_URL_API: postgres://app_api:api-dev-only@db:5432/orders
+      DATABASE_URL_RELAY: postgres://app_relay:relay-dev-only@db:5432/orders
       PORT: "3000"
       JWT_SECRET: dev-only-signing-secret-do-not-use-anywhere-else
       OTEL_SERVICE_NAME: orders-api

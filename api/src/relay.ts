@@ -107,8 +107,34 @@ export class Relay {
     }
   }
 
-  /** Polls until the signal aborts. Drains quickly when there is a backlog. */
-  async run(signal: AbortSignal, intervalMs: number, onError: (err: unknown) => void): Promise<void> {
+  /**
+   * Unpublished rows of this relay's event types and the age of the oldest.
+   * The SQS alarms can't see events that never left the outbox; this can.
+   */
+  async backlog(): Promise<Backlog> {
+    const { rows } = await this.pool.query<{ rows: number; age: number }>(
+      `SELECT count(*)::int AS rows,
+              coalesce(extract(epoch FROM now() - min(created_at)), 0)::float8 AS age
+         FROM outbox
+        WHERE published_at IS NULL AND event_type = ANY($1::text[])`,
+      [this.eventTypes],
+    );
+    return { rows: rows[0]!.rows, oldestAgeSeconds: Math.round(rows[0]!.age) };
+  }
+
+  /**
+   * Polls until the signal aborts. Drains quickly when there is a backlog.
+   * With `report`, also measures the backlog every `everyMs` and hands it to
+   * `onBacklog` (server.ts logs it; CloudWatch turns the log line into the
+   * outbox-age metric and alarm).
+   */
+  async run(
+    signal: AbortSignal,
+    intervalMs: number,
+    onError: (err: unknown) => void,
+    report?: { everyMs: number; onBacklog: (b: Backlog) => void },
+  ): Promise<void> {
+    let nextReport = 0;
     while (!signal.aborted) {
       let published = 0;
       try {
@@ -116,9 +142,22 @@ export class Relay {
       } catch (err) {
         onError(err);
       }
+      if (report && Date.now() >= nextReport) {
+        nextReport = Date.now() + report.everyMs;
+        try {
+          report.onBacklog(await this.backlog());
+        } catch (err) {
+          onError(err);
+        }
+      }
       if (published < this.batchSize) await sleep(intervalMs, signal);
     }
   }
+}
+
+export interface Backlog {
+  rows: number;
+  oldestAgeSeconds: number;
 }
 
 /** Some outbox rows couldn't be sent; they stay unpublished and are retried. */

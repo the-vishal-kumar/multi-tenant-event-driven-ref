@@ -32,6 +32,13 @@ export async function createTenant(ownerUrl: string, name: string): Promise<stri
   }
 }
 
+const USAGE = `Usage: node dist/cli.js <command>
+
+  migrate                    apply db/migrations (needs DATABASE_URL_OWNER)
+  create-tenant <name>       create a tenant, print its id (needs DATABASE_URL_OWNER)
+  token <tenant-id> [sub]    print a 1-hour JWT for the tenant (needs JWT_SECRET)
+  help                       show this help`;
+
 async function main(argv: string[]): Promise<void> {
   const [cmd, ...args] = argv;
   switch (cmd) {
@@ -48,11 +55,19 @@ async function main(argv: string[]): Promise<void> {
     }
     case 'token': {
       if (!args[0]) throw new Error('usage: token <tenant-id> [subject]');
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(args[0])) {
+        throw new Error(`tenant id must be a UUID (the output of create-tenant), got "${args[0]}"`);
+      }
       console.log(await signToken(env('JWT_SECRET'), args[0], args[1] ?? 'cli-user'));
       return;
     }
+    case 'help':
+    case '-h':
+    case '--help':
+      console.log(USAGE);
+      return;
     default:
-      throw new Error('usage: cli.js migrate | create-tenant <name> | token <tenant-id> [subject]');
+      throw new Error(cmd ? `unknown command "${cmd}"\n\n${USAGE}` : USAGE);
   }
 }
 
