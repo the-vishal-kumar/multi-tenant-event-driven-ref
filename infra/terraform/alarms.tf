@@ -1,6 +1,7 @@
 # Alarms that page on the failure modes of this design: messages
-# dead-lettered, dead letters left untriaged, and the main queue backing up
-# (workers down, stuck, or under-provisioned).
+# dead-lettered, dead letters left untriaged, the main queue backing up
+# (workers down, stuck, or under-provisioned), and events stuck in the outbox
+# (the relay can't publish).
 
 resource "aws_sns_topic" "alarms" {
   name              = "${var.name}-alarms"
@@ -80,4 +81,37 @@ resource "aws_cloudwatch_metric_alarm" "api_5xx" {
   comparison_operator = "GreaterThanThreshold"
   treat_missing_data  = "notBreaching"
   alarm_actions       = local.alarm_actions
+}
+
+# The SQS metrics can't see events that never left the outbox. The relay logs
+# `{"msg":"outbox backlog","outbox_oldest_age_seconds":N,...}` every 15 s from
+# each API task; this filter turns that field into a metric.
+resource "aws_cloudwatch_log_metric_filter" "outbox_age" {
+  name           = "${var.name}-outbox-oldest-age"
+  log_group_name = aws_cloudwatch_log_group.service["api"].name
+  pattern        = "{ $.msg = \"outbox backlog\" }"
+
+  metric_transformation {
+    name      = "OutboxOldestUnpublishedAgeSeconds"
+    namespace = "${var.name}/outbox"
+    value     = "$.outbox_oldest_age_seconds"
+    unit      = "Seconds"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "outbox_age" {
+  alarm_name          = "${var.name}-outbox-backlog"
+  alarm_description   = "An order event has waited in the outbox longer than ${var.outbox_age_alarm_seconds}s, or no API task has reported the backlog for 3 minutes. The relay can't publish (SQS outage, IAM, wrong QUEUE_URL) or isn't running: look for 'relay batch failed' in the API log."
+  namespace           = "${var.name}/outbox"
+  metric_name         = "OutboxOldestUnpublishedAgeSeconds"
+  statistic           = "Maximum"
+  period              = 60
+  evaluation_periods  = 5
+  datapoints_to_alarm = 3
+  threshold           = var.outbox_age_alarm_seconds
+  comparison_operator = "GreaterThanThreshold"
+  # No reports means no relay is running, which is the same outage.
+  treat_missing_data = "breaching"
+  alarm_actions      = local.alarm_actions
+  ok_actions         = local.alarm_actions
 }

@@ -1,0 +1,26 @@
+# Weekly update PRs, one per ecosystem, minor and patch grouped so the queue
+# stays short. CI runs every test against each PR.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /api
+    schedule: { interval: weekly }
+    groups:
+      npm-minor-patch: { update-types: [minor, patch] }
+  - package-ecosystem: gomod
+    directory: /worker
+    schedule: { interval: weekly }
+    groups:
+      go-minor-patch: { update-types: [minor, patch] }
+  - package-ecosystem: docker
+    directories: [/api, /worker]
+    schedule: { interval: weekly }
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule: { interval: weekly }
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+  - package-ecosystem: terraform
+    directory: /infra/terraform
+    schedule: { interval: weekly }

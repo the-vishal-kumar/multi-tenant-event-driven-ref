@@ -25,6 +25,7 @@ export interface Config {
   relayEnabled: boolean;
   relayIntervalMs: number;
   relayBatchSize: number;
+  relayBacklogReportMs: number;
 }
 
 export function loadConfig(): Config {
@@ -40,5 +41,6 @@ export function loadConfig(): Config {
     relayEnabled: process.env.RELAY_ENABLED !== 'false',
     relayIntervalMs: int('RELAY_INTERVAL_MS', 200),
     relayBatchSize: Math.min(int('RELAY_BATCH_SIZE', 50), 500),
+    relayBacklogReportMs: Math.max(int('RELAY_BACKLOG_REPORT_MS', 15_000), 1_000),
   };
 }

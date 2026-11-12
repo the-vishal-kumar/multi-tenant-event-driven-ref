@@ -20,7 +20,7 @@ docker run --rm --network mtedr_default \
   -e DATABASE_URL_WORKER=postgres://app_worker:worker-dev-only@db:5432/orders \
   -e SQS_ENDPOINT=http://localstack:4566 -e AWS_REGION=us-east-1 \
   -e AWS_ACCESS_KEY_ID=test -e AWS_SECRET_ACCESS_KEY=test \
-  golang:1.27.3-bookworm \
+  golang:1.27.4-bookworm \
   sh -c 'test -z "$(gofmt -l .)" && go vet ./... && go test -race -count=1 ./...'
 
 echo "--- end-to-end"

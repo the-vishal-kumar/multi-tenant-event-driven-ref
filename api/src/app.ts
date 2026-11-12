@@ -1,3 +1,4 @@
+import { trace } from '@opentelemetry/api';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { AuthError, type Principal, type Verifier } from './auth';
 import { UnknownTenantError, type OrderInput, type OrdersRepo } from './orders';
@@ -44,7 +45,9 @@ export interface AppDeps {
 
 export function buildApp({ orders, verify, logger = false }: AppDeps): FastifyInstance {
   const app = Fastify({
-    logger,
+    // JSON logs; each line written inside a traced request carries its
+    // trace_id and span_id, so a log line leads straight to the trace.
+    logger: logger && { mixin: traceFields },
     bodyLimit: 64 * 1024,
     // Reject, never silently fix up, a request that doesn't match the schema.
     ajv: { customOptions: { removeAdditional: false, coerceTypes: false, allErrors: false } },
@@ -108,6 +111,11 @@ export function buildApp({ orders, verify, logger = false }: AppDeps): FastifyIn
   });
 
   return app;
+}
+
+function traceFields(): Record<string, string> {
+  const ctx = trace.getActiveSpan()?.spanContext();
+  return ctx && trace.isSpanContextValid(ctx) ? { trace_id: ctx.traceId, span_id: ctx.spanId } : {};
 }
 
 type FastifyError = Error & { validation?: unknown; statusCode?: number; code?: string };

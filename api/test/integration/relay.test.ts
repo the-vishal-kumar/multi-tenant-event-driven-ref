@@ -100,6 +100,21 @@ describe('outbox relay', () => {
   });
 });
 
+describe('outbox backlog', () => {
+  it('reports unpublished rows and the age of the oldest, and zero once drained', async () => {
+    const tenant = await newTenant('relay-backlog');
+    const type = `test.relay-backlog.${randomUUID().slice(0, 8)}`;
+    await writeEvents(tenant, type, 3);
+    const ok: Queue = { sendBatch: async () => ({ failed: [] }) };
+    const relay = new Relay(pool('DATABASE_URL_RELAY'), ok, 50, [type]);
+    const before = await relay.backlog();
+    expect(before.rows).toBe(3);
+    expect(before.oldestAgeSeconds).toBeGreaterThanOrEqual(0);
+    await relay.runOnce();
+    expect(await relay.backlog()).toEqual({ rows: 0, oldestAgeSeconds: 0 });
+  });
+});
+
 describe('outbox relay under concurrency', () => {
   it('publishes each row exactly once when several relays drain the same backlog', async () => {
     const tenant = await newTenant('relay-race');

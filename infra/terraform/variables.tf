@@ -126,6 +126,12 @@ variable "queue_age_alarm_seconds" {
   default     = 300
 }
 
+variable "outbox_age_alarm_seconds" {
+  description = "Alarm when the oldest unpublished outbox row is older than this (the relay can't publish or is behind)."
+  type        = number
+  default     = 120
+}
+
 variable "dlq_age_alarm_seconds" {
   description = "Alarm when a dead letter has sat untriaged this long. The DLQ keeps messages 14 days."
   type        = number
