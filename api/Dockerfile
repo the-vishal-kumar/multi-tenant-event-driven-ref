@@ -1,5 +1,5 @@
 # Build context is the repository root (the image also carries db/migrations).
-FROM node:22-alpine AS deps
+FROM node:25-alpine AS deps
 WORKDIR /app/api
 COPY api/package.json api/package-lock.json ./
 RUN npm ci --no-audit --no-fund
@@ -13,7 +13,7 @@ FROM build AS test
 COPY db/migrations /app/db/migrations
 ENV MIGRATIONS_DIR=/app/db/migrations
 
-FROM node:22-alpine AS runtime
+FROM node:25-alpine AS runtime
 ENV NODE_ENV=production MIGRATIONS_DIR=/app/db/migrations
 WORKDIR /app/api
 COPY api/package.json api/package-lock.json ./
