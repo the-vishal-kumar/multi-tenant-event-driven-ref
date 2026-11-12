@@ -33,7 +33,7 @@ services:
       retries: 30
 
   localstack:
-    image: localstack/localstack:4.4.0
+    image: localstack/localstack:4.14.0
     environment:
       SERVICES: sqs
       SQS_ENDPOINT_STRATEGY: path
