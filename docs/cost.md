@@ -39,10 +39,10 @@ Excludes tax, support plans, data transfer out, and free-tier credits.
 |---|---|---|
 | `database_mode = "rds-instance"` (db.t4g.micro, 20 GB gp3) | 43.80 → ~14.00 | Fixed capacity; no scale-to-zero; a burstable instance can run out of CPU credits under sustained load |
 | `aurora_min_acu = 0` (auto-pause) | 43.80 → pay only for active hours (e.g. 8 h × 22 days ≈ $10.60) | First request after a pause waits for resume (seconds); unsuitable for a latency SLO |
-| `api_desired_count = 1` | −7.21 compute, −3.65 IPv4 | One AZ for the API; a task replacement is an outage |
+| `api_desired_count = 1` | -7.21 compute, -3.65 IPv4 | One AZ for the API; a task replacement is an outage |
 | `worker_on_spot = true` (default) | 9.01 → ~2.70 | Interruptions: in-flight messages reappear after the visibility timeout and are deduped, so this is safe by design |
 | ARM64 for on-demand tasks (default) | ~20% off x86 Fargate | Multi-arch image builds |
-| Turn off Container Insights | −~3 | Lose per-task CPU/memory metrics |
+| Turn off Container Insights | -~3 | Lose per-task CPU/memory metrics |
 | Private subnets + VPC endpoints instead of public IPs | Usually **more** at this size: 5 interface endpoints × 2 AZ × ~$7.30 ≈ $73 vs ~$18 of IPv4 | Endpoints win once there are many tasks or NAT would otherwise be needed |
 | NAT gateway instead of public IPs | **Adds** ~$33/AZ + $0.045/GB | Standard private-subnet pattern; worth it for compliance, not for cost |
 
