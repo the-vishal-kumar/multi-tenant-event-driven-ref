@@ -19,7 +19,7 @@ retries at a fixed interval (the visibility timeout) and records no reason.
   the DLQ on the first attempt. Everything else is treated as retryable.
 - **Back off with the visibility timeout.** On a retryable failure the
   worker calls `ChangeMessageVisibility` with
-  `base × 2^(attempt−1)`, capped, with equal jitter (half fixed, half
+  `base × 2^(attempt-1)`, capped, with equal jitter (half fixed, half
   random) so a burst of failures doesn't retry in lockstep. Production
   defaults: base 2 s, cap 5 min, 5 attempts (≈ 2+4+8+16 s before the last
   try). The local stack uses base 1 s, 4 attempts so the demo is quick.

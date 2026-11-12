@@ -1,6 +1,6 @@
 # multi-tenant-event-driven-ref
 
-[![ci](https://github.com/the-vishal-kumar/multi-tenant-event-driven-ref/actions/workflows/ci.yml/badge.svg)](https://github.com/the-vishal-kumar/multi-tenant-event-driven-ref/actions/workflows/ci.yml)
+[![ci](https://github.com/the-vishal-kumar/multi-tenant-event-driven-ref/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/the-vishal-kumar/multi-tenant-event-driven-ref/actions/workflows/ci.yml)
 
 ## Problem
 
@@ -194,7 +194,7 @@ The main ones have an ADR with the alternatives and when I would revisit it.
 | DLQ send fails | Message left on the main queue for SQS to redeliver | `TestDLQSendFailureLeavesMessageOnQueue` |
 | Worker crash-loops on one message | SQS redrive policy (`maxReceiveCount` 8 > `MAX_ATTEMPTS` 5) moves it | Terraform precondition; LocalStack config |
 | Redrive while the cause is unfixed | Message is dead-lettered again; redrive does not pick it up twice | `TestRedriveSkipsMessagesDeadLetteredAfterItStarted` |
-| Redrive on a large DLQ | **Limitation:** redrive stops at the first batch that holds only messages dead-lettered after it started, so with sampling (short polls) it can stop early: run it again until it reports 0. It compares SQS's `SentTimestamp` with the worker's clock, so keep clocks in sync (NTP). For big DLQs, SQS's own `StartMessageMoveTask` is the better tool | — |
+| Redrive on a large DLQ | **Limitation:** redrive stops at the first batch that holds only messages dead-lettered after it started, so with sampling (short polls) it can stop early: run it again until it reports 0. It compares SQS's `SentTimestamp` with the worker's clock, so keep clocks in sync (NTP). For big DLQs, SQS's own `StartMessageMoveTask` is the better tool | - |
 | API task stopped (deploy, scale-in) | `SIGTERM`: stops accepting connections, finishes in-flight requests and the relay's current batch, closes pools, flushes spans, exits 0; exits 1 if that takes over 20 s | checked by hand with `docker compose stop api` |
 | Worker task stopped (deploy, Spot) | `SIGTERM` cancels the long polls; messages already received are finished; anything unfinished reappears after the visibility timeout and is deduped | `consumer.Run`; dedupe tests |
 | Workers down or behind | `ApproximateAgeOfOldestMessage` alarm on the main queue | `infra/terraform/alarms.tf` |
@@ -224,8 +224,9 @@ that backlog waits in the outbox, where the SQS queue-age alarm can't see it;
 the outbox-age alarm covers it. The single Node.js process
 saturates around 540 req/s. In mid-run `docker stats` samples the API,
 Postgres and LocalStack were each near one core and the Go worker near 30%,
-so the bottleneck is the API process (more replicas and a profile would
-help; the relay is safe in each), not the worker.
+so the event path is limited by the single relay loop and LocalStack, not
+by the worker. This is a reading of those samples, not a profile; more API
+replicas (the relay is safe in each) and a profile would be the next step.
 
 Correctness under load: every check passed in every run (each replay
 returned the original order id), and every order created at 100 to 450
