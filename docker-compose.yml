@@ -20,7 +20,7 @@ x-db-urls: &db-urls
 
 services:
   db:
-    image: postgres:17-alpine
+    image: postgres:19-alpine
     environment:
       POSTGRES_PASSWORD: postgres-dev-only
     volumes:
